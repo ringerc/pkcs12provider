@@ -1,6 +1,12 @@
-A trivial certificate authority is included in this package
-for testing purposes only.
+DemoCerts
+=========
 
-If you use it for anything you care about, you're insane. The
-whole Internet has access to your CA key and can sign whatever
-they like with it.
+The DemoCerts directory contains a certificate authority with CA
+certificate, a few sample PKCS#12 (.p12) format client certificates, a
+PEM-format key and cert signed by the CA for installation in a server, etc.
+
+See the README in the DemoCerts directory for details.
+
+Do not under any circumstances use anything in the DemoCerts directory
+for anything except totally insecure testing of things you do not care
+about.

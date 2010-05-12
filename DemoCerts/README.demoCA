@@ -21,3 +21,9 @@ Here are some much better instructions on producing a demo CA
 than what I originally wrote:
 
   http://www.ibm.com/developerworks/java/library/j-certgen/
+
+Given that this is all Java-focused, the following information
+on using keytool with openssl to sign certificates generated
+in a Java .jks key store may also be useful:
+
+  http://www.iona.com/support/docs/artix/5.5/security_guide_java/i382664.html
