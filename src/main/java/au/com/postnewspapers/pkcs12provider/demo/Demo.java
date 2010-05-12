@@ -1,14 +1,11 @@
 package au.com.postnewspapers.pkcs12provider.demo;
 
 import au.com.postnewspapers.pkcs12provider.CertificateManager;
-import au.com.postnewspapers.pkcs12provider.PKCS12DataSource;
-import au.com.postnewspapers.pkcs12provider.PKCS12PasswordSource;
+import au.com.postnewspapers.pkcs12provider.PKCS12ConstantPasswordSource;
+import au.com.postnewspapers.pkcs12provider.PKCS12FileSource;
 import au.com.postnewspapers.pkcs12provider.PKCS12SSLSocketFactory;
 import java.io.BufferedReader;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URL;
 import java.security.GeneralSecurityException;
@@ -16,49 +13,37 @@ import javax.net.ssl.HttpsURLConnection;
 
 public class Demo {
 
-    public static final String
-            PKCS12_FILE_PATH = "/path/to/pkcsfile.p12",
-            PKCS12_FILE_PASS = "password",
-            HTTPS_HOST = "server.signed.by.same.ca.as.pkcsfile";
-
     public static final int HTTPS_PORT = 443;
 
-    /**
-     * Provider for PKCS12 data and passphrase when asked for them by the
-     * CertificateManager.
-     */
-    public static class SimpleFileProvider implements PKCS12DataSource, PKCS12PasswordSource {
-
-        @Override
-        public InputStream getPKCS12Data(String arg) {
-            try {
-                return new FileInputStream(arg);
-            } catch (FileNotFoundException ex) {
-                // Generally you'd use something a bit more ... informative than wrapping with RuntimeException
-                throw new RuntimeException("Failed to get pkcs12 file", ex);
-            }
-        }
-
-        @Override
-        public char[] getPassword(String arg) {
-            return PKCS12_FILE_PASS.toCharArray();
-        }
-
-    }
-
     public static void main(String[] args) throws GeneralSecurityException, IOException{
+        // Get the server, cert and password from our arguments. Typically
+        // these would be obtained via the PKCS12DataSource() and PKCS12PasswordSource()
+        // interface implementations, but we're going for ultra-simple here.
+        if (args.length != 3) {
+            System.err.println("Usage: demo https://serverurl[:port]/  path/to/cert.p12  password");
+            System.exit(1);
+        }
+        URL url = new URL(args[0]);
+        String certPath = args[1];
+        char[] certPass = args[2].toCharArray();
+
         // Init the CertificateManager
-        SimpleFileProvider provider = new SimpleFileProvider();
-        CertificateManager.init(provider, provider, true /*cache*/);
+        CertificateManager.init(
+                new PKCS12FileSource(),
+                /* Usually you'd provide a password prompter implementation here */
+                new PKCS12ConstantPasswordSource(certPass),
+                false /* don't cache loaded certs */);
 
         // Now establish a HTTPs connection to a test host we can mutually
-        // authenticate with.
-        URL url = new URL("https",HTTPS_HOST,HTTPS_PORT,"/");
+        // authenticate with, override the default ssl socket factory with ours,
+        // connect, print the data read, and quit.
         HttpsURLConnection conn = (HttpsURLConnection)url.openConnection();
         conn.setSSLSocketFactory(
-                // The argument will be passed to SimpleFileProvider.getPKCS12Data(...)
-                // where we choose to interpret it as the path to a pkcs12 file
-                new PKCS12SSLSocketFactory(PKCS12_FILE_PATH)
+                // The argument will be passed to PKCS12FileSource(...)
+                // where it is interpreted as the path to a pkcs12 file.
+                // You can interpret the arg to mean whatever you want in
+                // your own provider should you implement one.
+                new PKCS12SSLSocketFactory(certPath)
                 );
         conn.connect();
         BufferedReader is = new BufferedReader(new InputStreamReader(conn.getInputStream()));

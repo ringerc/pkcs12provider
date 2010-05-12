@@ -1,0 +1,10 @@
+To execute Demo.class, you will need a PKCS#12 format certificate archive, and
+access to a HTTPs server that has an SSL certificate signed by one of the CAs
+in that pkcs#12 archive.
+
+None of the demo classes are included in the the pkcs12provider jar. You will
+need to run a build, then execute them from the target/ directory. For the
+main Demo class:
+
+  cd target/classes
+  java au/com/postnewspapers/pkcs12provider/demo/Demo https://test.server/ my_cert.p12 my_cert_pass
