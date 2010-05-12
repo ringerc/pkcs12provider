@@ -1,0 +1,23 @@
+DEMO CERTS
+==========
+
+
+In addition, some self-signed certificates are included for testing.
+
+
+DEMO CA
+=======
+
+A trivial certificate authority is included in this package for testing
+purposes only. It can be found in DemoCerts/demoCA. If you use it for anything
+you care about, you're insane. The whole Internet has access to your CA key and
+can sign whatever they like with it.
+
+The Demo CA was produced with OpenSSL, but other tools may be used.
+Java's keytool appears to be too limited, however - it appears to
+lack the ability to sign a certificate request.
+
+Here are some much better instructions on producing a demo CA
+than what I originally wrote:
+
+  http://www.ibm.com/developerworks/java/library/j-certgen/

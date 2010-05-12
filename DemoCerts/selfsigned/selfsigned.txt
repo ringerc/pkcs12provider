@@ -1,0 +1,12 @@
+# create unencrypted RSA key
+openssl genrsa -out selfsigned_key.pem 1024
+
+# create self-signed cert with key
+openssl req -new -x509 -days 365 -key selfsigned_key.pem -out selfsigned_cert.pem
+
+# package them up in a pkcs12 file
+# The demo has the password "selfsigned"
+openssl pkcs12 -export -name "Self signed cert" -in selfsigned_cert.pem -inkey selfsigned_key.pem -aes128 \
+	-out selfsigned.p12
+
+

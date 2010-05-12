@@ -1,0 +1,6 @@
+A trivial certificate authority is included in this package
+for testing purposes only.
+
+If you use it for anything you care about, you're insane. The
+whole Internet has access to your CA key and can sign whatever
+they like with it.
