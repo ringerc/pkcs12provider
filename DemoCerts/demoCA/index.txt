@@ -1,1 +1,3 @@
 V	130511150400Z		00	unknown	/C=AU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=Demo CA
+V	200510122339Z		01	unknown	/C=AU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=Demo 1
+V	200510122924Z		02	unknown	/C=AU/ST=Some-State/O=Internet Widgits Pty Ltd/CN=Demo 2 one-degree CA

@@ -1,8 +1,125 @@
 DEMO CERTS
 ==========
 
+For all PKCS#12 files, the pkcs#12 export password is the same as the pkcs12
+file name sans .p12 extension.
 
-In addition, some self-signed certificates are included for testing.
+
+DEMO CERT 1 - DIRECT CA SIGNED CLIENT ONLY
+==========================================
+
+"1" is a user certificate (ie the CA extension is not present)
+that is signed directly by DemoCA. It has the Subject CN "Demo 1".
+
+
+1.p12		Has CA certificate embedded.
+1_nocacert.p12	Same as 1.p12, but omits CA certificate
+		from PKCS#12 file.
+1_key.pem	Unencrypted RSA key from 1.pkcs12
+1_cert.pem 	Cert from 1.pkcs12
+
+openssl req -new -nodes -keyout demoCA/private/1_key.pem -out newreq
+openssl ca -days 3650 -out demoCA/certs/1_cert.pem -extensions usr_cert -in newreq
+openssl pkcs12 -export -in demoCA/certs/1_cert.pem -inkey demoCA/private/1_key.pem -out demoCA/pkcs12/1_nocacert.p12
+openssl pkcs12 -export -in demoCA/certs/1_cert.pem -inkey demoCA/private/1_key.pem -out demoCA/pkcs12/1.p12 -CAfile demoCA/cacert.pem -chain
+
+A version of 1.p12 (including CA cert) that uses 3DES instead of the default RC2-40 encryption is also provided.
+
+openssl pkcs12 -export -in demoCA/certs/1_cert.pem -inkey demoCA/private/1_key.pem -out demoCA/pkcs12/1_des.p12 -CAfile demoCA/cacert.pem -chain -descert
+
+
+
+
+DEMO CERT 2 - DIRECT CA SIGNED CLIENT/CA
+========================================
+
+An intermediate CA cert is provided. It was generated the same way as (1)
+except that it has the CA extension present. It's still a perfectly valid client
+cert, but some apps may reject it for that use due to the presence of the CA flag.
+
+The Subject CN of (2) is "Demo 2 one-degree CA"
+
+2.p12		Has CA certificate embedded.
+2_nocacert.p12	Same as 2.p12, but omits CA certificate
+        	from PKCS#12 file.
+2_key.pem	Unencrypted RSA key from 2.pkcs12
+2_cert.pem 	Cert from 2.pkcs12
+
+openssl req -new -nodes -keyout demoCA/private/2_key.pem -out newreq
+openssl ca -days 3650 -out demoCA/certs/2_cert.pem -extensions v3_ca -in newreq
+openssl pkcs12 -export -in demoCA/certs/2_cert.pem -inkey demoCA/private/2_key.pem \
+	-out demoCA/pkcs12/2_nocacert.p12
+openssl pkcs12 -export -in demoCA/certs/2_cert.pem -inkey demoCA/private/2_key.pem \
+	-out demoCA/pkcs12/2.p12 -CAfile demoCA/cacert.pem -chain
+
+A copy of 2.pem with some other random certificates thrown in is also provided.
+It includes a cert signed by (2), another cert signed by demoCA but otherwise
+unrelated to (2), and a self-signed certificate of no relationship to (2) or
+the demo CA. Two versions are provided, one that includes the CA and one that
+does not.
+
+cat demoCA/certs/1_cert.pem demoCA/certs/3_cert.pem selfsigned_openssl/selfsigned_cert.pem > incerts.pem
+openssl pkcs12 -export -in demoCA/certs/2_cert.pem -inkey demoCA/private/2_key.pem \
+	-out demoCA/pkcs12/2_nocacert_withextras.p12 -certfile incerts.pem
+openssl pkcs12 -export -in demoCA/certs/2_cert.pem -inkey demoCA/private/2_key.pem \
+	-out demoCA/pkcs12/2_withextras.p12 -CAfile demoCA/cacert.pem -chain -certfile incerts.pem
+
+
+DEMO CERT 3 - CLIENT/CA SIGNED VIA DEMO CERT 2
+==============================================
+
+A key with certificate signed by (2) and thereby indirectly by demoCA is also
+provided. Validating this cert requires a chain of trust to be established from
+the CA cert via 2 to this cert. The CA extension is present, as this cert in
+turn signs another down the chain.
+
+The Subject CN of this cert is "Demo 3 twice-removed CA"
+
+Rather than using `openssl ca' this cert was signed usign `openssl x509' with the cert
+and key for (2) as the signer.
+
+Each of the pkcs12 exports of the key contains 3_key.pem and 3_cert.pem, but a different
+fragment of the certificate chain. All have the export password "3".
+
+3_missing_root.p12	cacert.pem only, no 2_cert.pem
+3_missing_inter.p12	2_cert.pem only, no cacert.pem
+3_nocaert.p12		neither cacert.pem nor 2_cert.pem
+3.p12			both cacert.pem and 2_cert.pem, ie complete chain
+
+openssl req -new -nodes -keyout demoCA/private/3_key.pem -out newreq
+openssl x509 -req -in newreq -out demoCA/certs/3_cert.pem -days 3650 -CA demoCA/certs/2_cert.pem \
+	-CAkey demoCA/private/2_key.pem -extensions v3_ca -set_serial 1
+openssl pkcs12 -export -in demoCA/certs/3_cert.pem -inkey demoCA/private/3_key.pem \
+	-out demoCA/pkcs12/3_nocacert.p12
+openssl pkcs12 -export -in demoCA/certs/3_cert.pem -inkey demoCA/private/3_key.pem \
+	-out demoCA/pkcs12/3_missing_inter.p12 -certfile demoCA/cacert.pem 
+openssl pkcs12 -export -in demoCA/certs/3_cert.pem -inkey demoCA/private/3_key.pem \
+	-out demoCA/pkcs12/3_missing_root.p12 -certfile demoCA/certs/2_cert.pem
+cat demoCA/certs/2_cert.pem demoCA/cacert.pem > /tmp/3ca.pem
+openssl pkcs12 -export -in demoCA/certs/3_cert.pem -inkey demoCA/private/3_key.pem \
+	-out demoCA/pkcs12/3.p12 -CAfile /tmp/3ca.pem -chain
+
+
+
+SELF SIGNED PAIRS
+=================
+
+The `selfsigned_openssl' and `selfsigned_keytool' directories
+contain self-signed key/cert pairs generated with those tools.
+Each contains a pkcs#12 file, a PEM-format certificate, and a 
+PEM-format key.
+
+If you need to convert a PEM format certificate or key into a DER format
+certificate or key you can use openssl to do so. OpenSSL can also be
+used to encrypt (password-protect) keys. See the "openssl rsa -help" and
+"openssl x509 -help" commands for details.
+
+For some applications you may need to strip any leading text before the 
+--BEGIN line from the certificate. Unfortunately, Java's keytool is one such
+limited application.
+
+
+( Side note: keytool defaults to using 3des for PKCS#12 certs, while openssl defaults to sha1+rc4 )
 
 
 DEMO CA
@@ -27,3 +144,20 @@ on using keytool with openssl to sign certificates generated
 in a Java .jks key store may also be useful:
 
   http://www.iona.com/support/docs/artix/5.5/security_guide_java/i382664.html
+
+
+
+OPENSSL TIPS
+============
+
+To examine a PKCS#12 cert in order to determine the encryption algorithm used etc, use:
+
+   openssl pkcs12 -in cert.p12 -info -nokeys
+
+To examine the CA certs in the pkcs#12 file use:
+
+   openssl pkcs12 -in cert.p12 -cacerts -nokeys
+
+General reference:
+
+   http://shib.kuleuven.be/docs/ssl_commands.shtml
