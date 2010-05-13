@@ -95,9 +95,11 @@ openssl pkcs12 -export -in demoCA/certs/3_cert.pem -inkey demoCA/private/3_key.p
 	-out demoCA/pkcs12/3_missing_inter.p12 -certfile demoCA/cacert.pem 
 openssl pkcs12 -export -in demoCA/certs/3_cert.pem -inkey demoCA/private/3_key.pem \
 	-out demoCA/pkcs12/3_missing_root.p12 -certfile demoCA/certs/2_cert.pem
-cat demoCA/certs/2_cert.pem demoCA/cacert.pem > /tmp/3ca.pem
+#
+# You must have run c_rehash on demoCA/certs for this to work:
+#
 openssl pkcs12 -export -in demoCA/certs/3_cert.pem -inkey demoCA/private/3_key.pem \
-	-out demoCA/pkcs12/3.p12 -CAfile /tmp/3ca.pem -chain
+	-out demoCA/pkcs12/3.p12 -CApath demoCA/certs -chain
 
 
 
@@ -161,3 +163,6 @@ To examine the CA certs in the pkcs#12 file use:
 General reference:
 
    http://shib.kuleuven.be/docs/ssl_commands.shtml
+
+If you want to use a -CApath argument, you need to run the `c_rehash' program on that
+directory first so that OpenSSL can find the certs.
