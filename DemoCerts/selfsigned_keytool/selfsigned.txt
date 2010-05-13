@@ -1,0 +1,5 @@
+keytool -storetype pkcs12 -storepass selfsigned -keystore selfsigned.p12 -genkeypair
+keytool -storetype pkcs12 -storepass selfsigned -keystore selfsigned.p12 -export -rfc -file selfsigned_cert.pem
+
+# keytool doesn't export private keys. Use openssl to export an unencrypted key.
+openssl pkcs12 -in selfsigned.p12  -nodes -nocerts -out selfsigned_key.pem
