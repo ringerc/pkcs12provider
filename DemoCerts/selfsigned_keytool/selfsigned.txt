@@ -1,3 +1,11 @@
+As this is a self-signed certificate, it may only be used to authenticate to a
+peer that has directly accepted this certificate as trusted for the purpose
+(identifying a server or identifying a client). Most servers provide no way to
+add a list of trusted client certificates, instead requiring the signing CA
+cert to be provided, so you'll have a hard time using this as a client
+certificate in testing. So don't.
+
+
 keytool -storetype pkcs12 -storepass selfsigned -keystore selfsigned.p12 -genkeypair
 keytool -storetype pkcs12 -storepass selfsigned -keystore selfsigned.p12 -export -rfc -file selfsigned_cert.pem
 
