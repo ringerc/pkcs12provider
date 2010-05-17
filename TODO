@@ -1,0 +1,6 @@
+Reject end certs with critical ext keyCertSign, as these are  CA-only
+
+Re-define key as "provider:key" so can use pkcs12, jks, etc.
+
+Permit addition of extra trusted certs to CertificateManager as
+X509Certificate, keystore input stream or keystore file.

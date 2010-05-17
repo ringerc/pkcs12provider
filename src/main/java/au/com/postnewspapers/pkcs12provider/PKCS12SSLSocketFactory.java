@@ -2,26 +2,24 @@ package au.com.postnewspapers.pkcs12provider;
 
 import java.net.Socket;
 import java.security.GeneralSecurityException;
-import java.security.InvalidKeyException;
+import java.security.InvalidAlgorithmParameterException;
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.security.Principal;
 import java.security.PrivateKey;
-import java.security.SignatureException;
 import java.security.cert.CertificateException;
-import java.security.cert.CertificateExpiredException;
-import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.security.cert.CertPath;
+import java.security.cert.CertPathValidator;
+import java.security.cert.CertPathValidatorException;
+import java.security.cert.CertificateFactory;
+import java.security.cert.PKIXCertPathValidatorResult;
+import java.security.cert.PKIXParameters;
+import java.util.Arrays;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509KeyManager;
 import javax.net.ssl.X509TrustManager;
-
 /**
  * An SSL Socket factory that uses the CertificateTrustManager credentials
  * to authenticate the remote end and to perform client certificate
@@ -39,6 +37,14 @@ public class PKCS12SSLSocketFactory extends WrappedFactory {
     // for this session
     PKCS12Store pks;
 
+    private final CertificateFactory x509CertFactory =
+            CertificateFactory.getInstance(CERT_TYPE_X509);
+
+    private static final String
+            VALIDATION_TYPE_PKIX = "PKIX",
+            CERT_TYPE_X509 = "X.509",
+            SSLCONTEXT_TYPE_TLS = "TLS";
+
     /**
      * Create a PKCS12SSLSocketFactory.
      *
@@ -51,8 +57,8 @@ public class PKCS12SSLSocketFactory extends WrappedFactory {
      * @throws GeneralSecurityException
      */
     public PKCS12SSLSocketFactory(String arg) throws GeneralSecurityException {
-        pks = CertificateManager.getStoreForKey(arg);
-        SSLContext ctx = SSLContext.getInstance("TLS"); // or "SSL" ?
+        pks = CertificateManager.getInstance().getStoreForKey(arg);
+        SSLContext ctx = SSLContext.getInstance(SSLCONTEXT_TYPE_TLS);
         ctx.init(
                 new KeyManager[]{ new CMSSLKeyManager()},
                 new TrustManager[]{ new CMSSLTrustManager()},
@@ -68,127 +74,43 @@ public class PKCS12SSLSocketFactory extends WrappedFactory {
      */
     private class CMSSLTrustManager implements X509TrustManager {
 
+        /**
+         * See CertificateManager.getTrustedCertificates
+         * @return All trusted certificate
+         */
         @Override
         public X509Certificate[] getAcceptedIssuers() {
-            X509Certificate[] localCerts = pks.getUserCertificateChain();
-            List<X509Certificate> validTrustCerts = new ArrayList<X509Certificate>(localCerts.length);
-            for (X509Certificate localCert : localCerts) {
-                try {
-                    localCert.checkValidity();
-                } catch (CertificateExpiredException ex) {
-                    Logger.getLogger(PKCS12SSLSocketFactory.class.getName()).log(Level.SEVERE, null, ex);
-                    continue;
-                } catch (CertificateNotYetValidException ex) {
-                    Logger.getLogger(PKCS12SSLSocketFactory.class.getName()).log(Level.SEVERE, null, ex);
-                    continue;
-                }
-                // Make sure it's allowed to be used as a CA certificate
-                if (localCert.getBasicConstraints() < 0) {
-                    continue;
-                }
-                // Other things you might want to do here:
-                //
-                // - check 'getKeyUsage()' bits to determine if cert is allowed to sign certificates.
-                // - check extended usage bits
-                validTrustCerts.add(localCert);
+            return CertificateManager.getInstance().getTrustedCertificates(pks);
+        }
+
+        private void checkTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            try {
+                CertificateManager cm = CertificateManager.getInstance();
+                // We need the peer-supplied chain as a CertPath
+                CertPath path = x509CertFactory.generateCertPath(Arrays.asList(chain));
+                // And validate the path against our trusted certs
+                CertPathValidator v = CertPathValidator.getInstance(VALIDATION_TYPE_PKIX);
+                PKIXParameters params = cm.getValidatorParams(pks);
+                PKIXCertPathValidatorResult validationResult = (PKIXCertPathValidatorResult) v.validate(path, params);
+                // If we get any result from validation, we're ok.
+                
+            } catch (CertPathValidatorException ex) {
+                throw new CertificateException("Failed to find valid trust for provided certificate path", ex);
+            } catch (InvalidAlgorithmParameterException ex) {
+                throw new CertificateException("Unable to validate trust path due to internal error", ex);
+            } catch (NoSuchAlgorithmException ex) {
+                throw new CertificateException("Unable to validate trust path due to internal error", ex);
             }
-            return validTrustCerts.toArray(new X509Certificate[validTrustCerts.size()]);
         }
 
         @Override
-        public void checkClientTrusted(X509Certificate[] certs, String authType) throws CertificateException {
-            throw new CertificateException("Client mode not supported by trust manager");
+        public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException {
+            checkTrusted(chain, authType);
         }
 
         @Override
         public void checkServerTrusted(X509Certificate[] chain, String authType) throws CertificateException {
-            // Given the peer provided certificate chain, determine if we trust
-            // any of them, or throw CertificateException if not.
-            //
-            // WARNING: Does **NOT** validate host name against server certificate Subject
-            if (chain == null || chain.length == 0) {
-                throw new IllegalArgumentException("Peer-provided certificate chain null or zero-length");
-            }
-
-            X509Certificate[] validTrustCerts = getAcceptedIssuers();
-
-            // We've been passed a certificate chain. What we must first do is verify that
-            // we trust one of the certificates in the chain (by making sure it's signed
-            // by one of our trusted certificates). If we don't trust any of the certs
-            // in the chain, we can reject the lot.
-            //
-            // If we trust multiple certificates we only need to establish trust
-            // from the "closest" one to the peer, so we work forward in the list.
-            //
-            int trustedIdx = -1;
-            try {
-                X509Certificate lastCert = null, thisCert = null;
-                for (int i = 0; i < chain.length; i++) {
-                    lastCert = thisCert;
-                    thisCert = chain[i];
-                    // Is this cert valid? If not, the chain of trust is broken
-                    // and we'll throw our toys.
-                    thisCert.checkValidity();
-                    // Similarly, `lastCert' must be signed by `thisCert'
-                    // or `thisCert' breaks the chain of trust. This will throw
-                    // unless verification passes.
-                    if (lastCert != null) {
-                        lastCert.verify(thisCert.getPublicKey());
-                    }
-                    // Cert is valid. Is it signed by somebody we trust? If not,
-                    // that's no big deal, we'll just check the next certificate.
-                    if (certTrustedSigner(thisCert, validTrustCerts) != null) {
-                        // OK, we trust this cert, it's valid, and there's an unbroken
-                        // valid chain of signatures from it to the peer cert. Guess we trust
-                        // the peer.
-                        trustedIdx = i;
-                        break;
-                    }
-                }
-            } catch (NoSuchAlgorithmException ex) {
-                throw new CertificateException("Certificate chain validation failed", ex);
-            } catch (InvalidKeyException ex) {
-                throw new CertificateException("Certificate chain validation failed", ex);
-            } catch (NoSuchProviderException ex) {
-                throw new CertificateException("Certificate chain validation failed", ex);
-            } catch (SignatureException ex) {
-                throw new CertificateException("Certificate chain validation failed", ex);
-            }
-            if (trustedIdx == -1) {
-                // We didn't find any signatures from anyone we trust in the
-                // certificate chain provided by the peer. Reject it.
-                throw new CertificateException("No certificate in chain signed by trusted authority");
-            }
-        }
-
-        /**
-         * Test `cert' against `trustedSigners' to see if any of the trusted
-         * signers have signed `cert'. If so, return the certificate of the trusted
-         * signer who signed `cert', or null if no trusted signatures were found on `cert'.
-         *
-         * @param cert certificate to check for trustworthiness
-         * @param trustedSigners certificates whose signatures are trusted
-         * @return trusted cert whose signature was found on `cert', or null if no trusted signatures found
-         */
-        private X509Certificate certTrustedSigner(X509Certificate cert, X509Certificate[] trustedSigners) {
-            for (X509Certificate trustedSigner : trustedSigners) {
-            try {
-                cert.verify(trustedSigner.getPublicKey());
-                // Verification passed, `cert' is signed by `trustedSigner'
-                return trustedSigner;
-            } catch (CertificateException ex) {
-                continue;
-            } catch (InvalidKeyException ex) {
-                continue;
-            } catch (NoSuchAlgorithmException ex) {
-                continue;
-            } catch (NoSuchProviderException ex) {
-                continue;
-            } catch (SignatureException ex) {
-                continue;
-            }
-            }
-            return null;
+            checkTrusted(chain, authType);
         }
     }
 

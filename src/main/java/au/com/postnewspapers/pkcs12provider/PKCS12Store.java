@@ -1,14 +1,12 @@
 package au.com.postnewspapers.pkcs12provider;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
+import java.security.UnrecoverableEntryException;
 import java.security.UnrecoverableKeyException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
@@ -24,30 +22,13 @@ public class PKCS12Store {
     private static final String KS_TYPE_PKCS12 = "pkcs12";
 
     private KeyStore userKeyStore;
-    private String userCertificateAlias;
+    private String userKeyAlias;
     private X509Certificate[] userCertificateChain;
     private PrivateKey userKey;
-
-    public PKCS12Store(File pkcs12File, char[] pkcs12Password) {
-        final String msg = "unable to load pkcs12 file " + pkcs12File;
-        loadUserKeyStore(pkcs12File, pkcs12Password, msg);
-    }
 
     public PKCS12Store(InputStream pkcs12Data, char[] pkcs12Password) {
         final String msg = "unable to load pkcs12 data from stream";
         loadUserKeyStore(pkcs12Data, pkcs12Password, msg);
-    }
-
-    private void loadUserKeyStore(File userStorePath, char[] pkcs12password, String msg) {
-        try {
-            InputStream ksStream = new FileInputStream(userStorePath);
-            loadUserKeyStore(ksStream, pkcs12password, msg);
-            ksStream.close();
-        } catch (FileNotFoundException ex) {
-            throw new PKCS12StoreError(msg, ex);
-        } catch (IOException ex) {
-            throw new PKCS12StoreError(msg, ex);
-        }
     }
 
     private void loadUserKeyStore(InputStream pkcs12Data, char[] ksPass, String msg) {
@@ -59,25 +40,38 @@ public class PKCS12Store {
             if (!aliases.hasMoreElements()) {
                 throw new PKCS12StoreError("No entries found in PKCS#12 certificate file");
             }
-            userCertificateAlias = aliases.nextElement();
-            if (aliases.hasMoreElements()) {
-                throw new PKCS12StoreError("More than one entry found in PKCS#12 file, unsupported");
+            while (aliases.hasMoreElements()) {
+                String alias = aliases.nextElement();
+                // is it a PrivateKey
+                if (ks.isKeyEntry(alias)) {
+                    // This is the user's private key and associated cert, possibly
+                    // plus the chain of certificates up to the root CA that signed it.
+                    if (userKeyAlias != null) {
+                        throw new CertificateException("Only one key may be present in a PKCS#12 file, " +
+                                "but found aliases \"" + userKeyAlias + "\" and \""
+                                + alias + "\" both of key type ");
+                    }
+                    userKeyAlias = alias;
+                    // For a PKCS12 cert the key pass is the same as the package
+                    // pass, so we can definitely decrypt this.
+                    userKey = (PrivateKey)ks.getKey(alias, ksPass);
+                    Certificate[] chain = ks.getCertificateChain(alias);
+                    userCertificateChain = new X509Certificate[chain.length];
+                    System.arraycopy(chain, 0, userCertificateChain, 0, chain.length);
+                } else {
+                    // Java's PKCS#12 implementation doesn't support "extra" unrelated
+                    // certs in a PKCS#12 file.
+                    throw new CertificateException("Unexpected certificate entry found in PKCS#12 data," +
+                            "alias \"" + alias + "\" wasn't a PublicKey");
+                }
             }
-            Certificate[] certs = ks.getCertificateChain(userCertificateAlias);
-            userCertificateChain = new X509Certificate[certs.length];
-            for (int i = 0; i < certs.length; i++) {
-                // Every cert in a PKCS#12 file must be an X.509 cert
-                userCertificateChain[i] = (X509Certificate)certs[i];
-            }
-            // Yes, I know it's a bit naughty to decrypt this right here and now. But
-            // if we don't, we still store their password, which is all that's required
-            // to decrypt it later. So there's little difference, really.
-            userKey = (PrivateKey) ks.getKey(userCertificateAlias, ksPass);
         } catch (NoSuchAlgorithmException ex) {
             throw new PKCS12StoreError(msg, ex);
         } catch (KeyStoreException ex) {
             throw new PKCS12StoreError(msg, ex);
         } catch (UnrecoverableKeyException ex) {
+            throw new PKCS12StoreError(msg, ex);
+        } catch (UnrecoverableEntryException ex) {
             throw new PKCS12StoreError(msg, ex);
         } catch (ClassCastException ex) {
             throw new PKCS12StoreError(msg, ex);
@@ -89,15 +83,40 @@ public class PKCS12Store {
         userKeyStore = ks;
     }
 
+    /**
+     * Get the alias that identifies the user PublicKey entry in this
+     * PKCS#12 file.
+     * 
+     * @return the KeyStore alias for the user cert and key.
+     */
     public String getUserCertificateAlias() {
-        return userCertificateAlias;
+        return userKeyAlias;
     }
 
+    /**
+     * Return the X.509 certificate chain for the PKCS#12 file, including
+     * the user's own certificate. There is no guarantee that the chain
+     * is complete and gapless, nor that it is correctly ordered, as this
+     * depends on the PKCS#12 file.
+     *
+     * @return (possibly partial) X.509 certificate chain from PKCS#12 file
+     */
     public X509Certificate[] getUserCertificateChain() {
         return userCertificateChain;
     }
 
+    /**
+     * @return Private key from the PKCS#12 file
+     */
     PrivateKey getUserKey() {
         return userKey;
     }
+
+    /**
+     * @return KeyStore containing the loaded PKCS#12 file contents
+     */
+    KeyStore getKeyStore() {
+        return userKeyStore;
+    }
+    
 }
