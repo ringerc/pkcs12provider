@@ -1,84 +1,49 @@
-=======================
-WARNING WARNING WARNING
-=======================
-
-This code is experimental. It is being published for review for potential
-eventual use as an example in the PostgreSQL JDBC driver, but may have
-wider uses.
-
-It is extremely alpha. If you rely on it for anything, you're insane. It
-will probably trust you when you say you have a bridge for sale...
-
-=======================
-WHY YOU MIGHT WANT THIS
-=======================
-
-Java provides a system keystore, but it is rather inflexible. Controlling
-it requires messing with system properties, and it's somewhat painful to do
-things like add additional trusted certificates shipped in an application,
-or manage client certificates.
-
-Some applications need to establish two-way-authenticated connections to
-a server, using a client certificate to authenticate the connection. These
-apps may set the:
-  javax.net.ssl.keystore
-  javax.net.ssl.keystoreType
-  javax.net.ssl.keystorePass 
-properties to point to a PKCS#12 file containing a client cert and CA cert, but
-this is inflexible and annoying especially when the app may not be directly
-invoked from a pristene interpreter and free to restart the interpreter
-at its convenience.
-
-Alternately, they may set these properties to a .jks file created with keytool
-or programatically using the KeyStore APIs, so that Java's default
-SSLSocketFactory and associated trust and key managers use that key store. This
-works well enough, but requires the user to mess with keytool, or the app
-to provide user interface for installing/removing certificates, editing
-certificate trust, etc.
-
 ======================
-WHAT IS PKCS12PROVIDER?
+     TERMINATED
 ======================
 
-pkcs12provider is an attempt to solve these problems by providing a
-simple-to-use way to load PKCS#12 credentials and use them in SSL/TLS
-via a custom SSLSocketFactory. It tries to take care of most of the 
-dirty work involved in loading the cert, evaluating trust, presenting
-a client certificate, etc; all you need to do is tell it where to get
-the PKCS#12 file (or data stream) and how to decrypt it.
-
-pkcs12provider works fine from within a SecurityManager restricted
-environment. In particular, it runs in Java Web Start without requiring
-AllPriveleges. You can't load PKCS#12 files directly from the local file
-system but you can get them from your jar files, user input, etc.
-
-There is no need to mess with system properties, .jks keystores, the
-`cacerts' keystore, etc when using pkcs12provider. You don't need to
-implement your own SSLSocketFactory, X509TrustManager and X509KeyManager
-either.
-
-==========
-HOW TO USE
-==========
+Work on this project has been terminated and the code has been removed. This
+approach proved to be too inflexible to make generic without essentially
+reimplementing the Java APIs that exist for the purpose.
 
 
-A sample use of the pkcs12provider library for HTTPS is provided in the
-`demo' package, as the Demo class.
+If you want these facilities, you're better off building them yourself
+in your app from the Java KeyStore, KeyStore.Builder, CertPath,
+CertPathValidator, KeyStore.ProtectionParameter, etc  APIs.
+
+See the java.security and java.security.cert packages, Java PKI
+Programmer's Guide:
+ 
+  http://java.sun.com/javase/6/docs/technotes/guides/security/certpath/CertPathProgGuide.html
+
+Java Cryptography Architecture:
+
+  http://java.sun.com/javase/6/docs/technotes/guides/security/crypto/CryptoSpec.html#ProviderArch
+
+  http://java.sun.com/javase/6/docs/technotes/guides/security/crypto/CryptoSpec.html
 
 
-To use pkcs12provider, you need to be able to override the SSLSocketFactory
-you're using. If you're establishing connections directly this is trivial. For
-most other situations the tool you are using will provide a suitable mechanism.
-For example, with PostgreSQL just add:
+Generally, use a KeyStore.Builder and KeyStore.ProtectionParameter to store a
+"potential" keystore that you can decrypt via the KeyStore.ProtectionParameter
+callback (eg with KeyStore.PasswordProtection or
+KeyStore.CallbackHandlerProtection) when it's needed. If you want PKCS#12
+format certs just use keystore type "pkcs12".
 
-  sslfactory=au.com.postnewspapers.pkcs12provider.PKCS12SSLSocketFactory
+Once you have a KeyStore for your custom SSLSocketFactory, you can use a custom
+X509TrustManager and X509KeyManager to supply keys and validate certs. Cert
+validation should be done by building a CertPath from the X509Certificate[]
+from the peer using CertificateFactory, building a Set<TrustAnchor> from your
+set of trusted certificates (or using your KeyStore containing trusted certs),
+and using CertPathValidator to check the path against the trusted certs.
 
-to your JDBC url, and optionally:
-  
-  sslfactoryarg=myargument
 
-if you want to pass an argument to the SSLSocketFactory.
+If time permits I'll put a sample implementation up here, but don't hold your
+breath.
 
+My own app turns out to be better off setting java.net.ssl.keystore and
+java.net.ssl.truststore to an app-maintained JKS store, and providing UI to
+help the user import a PKCS#12 cert into the store if a server is found to
+require a client cert, or a pem file if a server is found to be untrusted. 
 
-Now, you can implement the PKCS12DataSource and PKCS12PasswordSource interfaces
-according to their javadoc. Each has a single method.
+That way the standard Java SSLSocketFactory, X509TrustManager, X509KeyManager
+etc may be used unchanged.
